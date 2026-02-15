@@ -6,6 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Times of Fortune</title>
     <style>
+        @font-face {
+            font-family: 'VT323';
+            src: url('VT323-Regular.ttf') format('truetype');
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -13,41 +18,32 @@
         }
 
         body {
-            background: #1a1a2e;
+            background: #fff;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow: hidden;
+            font-family: 'VT323', monospace;
         }
 
         .game-container {
             position: relative;
-            border: 4px solid #e94560;
-            border-radius: 8px;
-            box-shadow:
-                0 0 20px rgba(233, 69, 96, 0.4),
-                0 0 60px rgba(233, 69, 96, 0.15),
-                inset 0 0 20px rgba(0, 0, 0, 0.3);
+            border: 4px solid #000;
         }
 
         canvas {
             display: block;
-            border-radius: 4px;
         }
 
         #score-display {
             position: absolute;
             top: 12px;
             right: 16px;
-            color: #fff;
-            font-size: 22px;
-            font-weight: 700;
-            text-shadow: 0 0 10px rgba(0, 0, 0, 0.8), 2px 2px 4px rgba(0, 0, 0, 0.6);
             pointer-events: none;
             z-index: 10;
-            letter-spacing: 1px;
+            font-family: 'VT323', monospace;
+            font-size: 28px;
+            color: #000;
         }
     </style>
 </head>
@@ -72,13 +68,13 @@
         let keys = {};
         let gameState = 'start'; // 'start', 'playing', 'gameover'
 
-        // --- Background ---
-        const bgImage = new Image();
-        bgImage.src = 'brick.png';
-        let bgPattern = null;
-        bgImage.onload = () => {
-            bgPattern = ctx.createPattern(bgImage, 'repeat');
-        };
+        // --- Load VT323 font for canvas ---
+        const vt323 = new FontFace('VT323', "url('VT323-Regular.ttf')");
+        vt323.load().then(font => {
+            document.fonts.add(font);
+        });
+
+
 
         // --- Player (blue ball) ---
         const player = {
@@ -127,24 +123,10 @@
             return Math.hypot(bx - ax, by - ay);
         }
 
-        function drawBall(x, y, r, color, glowColor) {
-            // glow
-            ctx.save();
-            ctx.shadowColor = glowColor;
-            ctx.shadowBlur = 18;
+        function drawBall(x, y, r, color) {
             ctx.beginPath();
             ctx.arc(x, y, r, 0, Math.PI * 2);
             ctx.fillStyle = color;
-            ctx.fill();
-            ctx.restore();
-
-            // highlight
-            const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
-            grad.addColorStop(0, 'rgba(255,255,255,0.45)');
-            grad.addColorStop(1, 'rgba(255,255,255,0)');
-            ctx.beginPath();
-            ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.fillStyle = grad;
             ctx.fill();
         }
 
@@ -216,72 +198,43 @@
         // --- Draw ---
         function draw() {
             // Background
-            if (bgPattern) {
-                ctx.fillStyle = bgPattern;
-                ctx.fillRect(0, 0, W, H);
-            } else {
-                ctx.fillStyle = '#2d2d44';
-                ctx.fillRect(0, 0, W, H);
-            }
-
-            // Slight overlay for readability
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+            ctx.fillStyle = '#fff';
             ctx.fillRect(0, 0, W, H);
 
             // Enemy
-            drawBall(enemy.x, enemy.y, enemy.r, enemy.color, enemy.glowColor);
+            drawBall(enemy.x, enemy.y, enemy.r, enemy.color);
 
             // Projectiles
             for (const p of projectiles) {
-                ctx.save();
-                ctx.shadowColor = 'rgba(0,0,0,0.7)';
-                ctx.shadowBlur = 8;
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
                 ctx.fillStyle = '#222';
                 ctx.fill();
-                ctx.restore();
-
-                // small glint
-                const g = ctx.createRadialGradient(p.x - p.r * 0.25, p.y - p.r * 0.25, p.r * 0.05, p.x, p.y, p.r);
-                g.addColorStop(0, 'rgba(255,255,255,0.3)');
-                g.addColorStop(1, 'rgba(255,255,255,0)');
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-                ctx.fillStyle = g;
-                ctx.fill();
             }
 
             // Player
-            drawBall(player.x, player.y, player.r, player.color, player.glowColor);
+            drawBall(player.x, player.y, player.r, player.color);
         }
 
         // --- Start Screen ---
         function drawStartScreen() {
             // Background
-            if (bgPattern) {
-                ctx.fillStyle = bgPattern;
-                ctx.fillRect(0, 0, W, H);
-            } else {
-                ctx.fillStyle = '#2d2d44';
-                ctx.fillRect(0, 0, W, H);
-            }
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+            ctx.fillStyle = '#fff';
             ctx.fillRect(0, 0, W, H);
 
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
-            ctx.fillStyle = '#4fc3f7';
-            ctx.font = 'bold 48px Courier New, monospace';
+            ctx.fillStyle = '#000';
+            ctx.font = '48px VT323, monospace';
             ctx.fillText('TIMES OF FORTUNE', W / 2, H / 2 - 60);
 
-            ctx.fillStyle = '#ccc';
-            ctx.font = '18px Courier New, monospace';
+            ctx.fillStyle = '#000';
+            ctx.font = '22px VT323, monospace';
             ctx.fillText('Dodge the enemy projectiles!', W / 2, H / 2 + 10);
 
-            ctx.fillStyle = '#e94560';
-            ctx.font = 'bold 22px Courier New, monospace';
+            ctx.fillStyle = '#000';
+            ctx.font = '26px VT323, monospace';
             ctx.fillText('[ PRESS ENTER TO START ]', W / 2, H / 2 + 70);
         }
 
@@ -299,26 +252,19 @@
         function gameOver() {
             gameState = 'gameover';
 
-            // Darken
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-            ctx.fillRect(0, 0, W, H);
-
             // Text
-            ctx.fillStyle = '#e94560';
-            ctx.font = 'bold 52px Segoe UI, sans-serif';
+            ctx.fillStyle = '#000';
+            ctx.font = '52px VT323, monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.shadowColor = 'rgba(233, 69, 96, 0.6)';
-            ctx.shadowBlur = 20;
             ctx.fillText('GAME OVER', W / 2, H / 2 - 30);
 
-            ctx.fillStyle = '#fff';
-            ctx.font = '26px Segoe UI, sans-serif';
-            ctx.shadowColor = 'transparent';
+            ctx.fillStyle = '#000';
+            ctx.font = '26px VT323, monospace';
             ctx.fillText(`Your score: ${score}`, W / 2, H / 2 + 25);
 
-            ctx.fillStyle = '#aaa';
-            ctx.font = '18px Segoe UI, sans-serif';
+            ctx.fillStyle = '#000';
+            ctx.font = '22px VT323, monospace';
             ctx.fillText('Press ENTER to return to menu', W / 2, H / 2 + 65);
 
             window.addEventListener('keydown', restartHandler);
