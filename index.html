@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Times of Fortune</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        .game-container {
+            position: relative;
+            border: 4px solid #e94560;
+            border-radius: 8px;
+            box-shadow:
+                0 0 20px rgba(233, 69, 96, 0.4),
+                0 0 60px rgba(233, 69, 96, 0.15),
+                inset 0 0 20px rgba(0, 0, 0, 0.3);
+        }
+
+        canvas {
+            display: block;
+            border-radius: 4px;
+        }
+
+        #score-display {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            color: #fff;
+            font-size: 22px;
+            font-weight: 700;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.8), 2px 2px 4px rgba(0, 0, 0, 0.6);
+            pointer-events: none;
+            z-index: 10;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="game-container">
+        <div id="score-display">Points: 0</div>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score-display');
+
+        const W = 800;
+        const H = 600;
+
+        // --- State ---
+        let score = 0;
+        let keys = {};
+        let gameState = 'start'; // 'start', 'playing', 'gameover'
+
+        // --- Background ---
+        const bgImage = new Image();
+        bgImage.src = 'brick.png';
+        let bgPattern = null;
+        bgImage.onload = () => {
+            bgPattern = ctx.createPattern(bgImage, 'repeat');
+        };
+
+        // --- Player (blue ball) ---
+        const player = {
+            x: W / 2,
+            y: H / 2,
+            r: 18,
+            speed: 2.2,
+            color: '#4fc3f7',
+            glowColor: 'rgba(79, 195, 247, 0.5)',
+        };
+
+        // --- Enemy (red ball) ---
+        const enemy = {
+            x: 100,
+            y: 100,
+            r: 20,
+            vx: 1,
+            vy: 0.7,
+            color: '#ef5350',
+            glowColor: 'rgba(239, 83, 80, 0.5)',
+            shootTimer: 0,
+            shootInterval: 150, // frames between shots
+        };
+
+        // --- Projectiles ---
+        let projectiles = [];
+        const PROJECTILE_SPEED = 2;
+        const PROJECTILE_RADIUS = 6;
+
+        // --- Input ---
+        window.addEventListener('keydown', e => {
+            keys[e.key] = true;
+            // prevent scrolling with arrows
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+        window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+        // --- Helpers ---
+        function clamp(val, min, max) {
+            return Math.max(min, Math.min(max, val));
+        }
+
+        function dist(ax, ay, bx, by) {
+            return Math.hypot(bx - ax, by - ay);
+        }
+
+        function drawBall(x, y, r, color, glowColor) {
+            // glow
+            ctx.save();
+            ctx.shadowColor = glowColor;
+            ctx.shadowBlur = 18;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.restore();
+
+            // highlight
+            const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
+            grad.addColorStop(0, 'rgba(255,255,255,0.45)');
+            grad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = grad;
+            ctx.fill();
+        }
+
+        // --- Update ---
+        function update() {
+            // Player movement
+            if (keys['ArrowUp'] || keys['w']) player.y -= player.speed;
+            if (keys['ArrowDown'] || keys['s']) player.y += player.speed;
+            if (keys['ArrowLeft'] || keys['a']) player.x -= player.speed;
+            if (keys['ArrowRight'] || keys['d']) player.x += player.speed;
+
+            // Clamp player inside canvas
+            player.x = clamp(player.x, player.r, W - player.r);
+            player.y = clamp(player.y, player.r, H - player.r);
+
+            // Enemy movement (bouncing)
+            enemy.x += enemy.vx;
+            enemy.y += enemy.vy;
+            if (enemy.x - enemy.r <= 0 || enemy.x + enemy.r >= W) enemy.vx *= -1;
+            if (enemy.y - enemy.r <= 0 || enemy.y + enemy.r >= H) enemy.vy *= -1;
+            enemy.x = clamp(enemy.x, enemy.r, W - enemy.r);
+            enemy.y = clamp(enemy.y, enemy.r, H - enemy.r);
+
+            // Enemy shooting
+            enemy.shootTimer++;
+            if (enemy.shootTimer >= enemy.shootInterval) {
+                enemy.shootTimer = 0;
+                // Aim at player
+                const dx = player.x - enemy.x;
+                const dy = player.y - enemy.y;
+                const d = Math.hypot(dx, dy) || 1;
+                projectiles.push({
+                    x: enemy.x,
+                    y: enemy.y,
+                    vx: (dx / d) * PROJECTILE_SPEED,
+                    vy: (dy / d) * PROJECTILE_SPEED,
+                    r: PROJECTILE_RADIUS,
+                });
+            }
+
+            // Update projectiles
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+
+                // Check if off-screen → score!
+                if (p.x + p.r < 0 || p.x - p.r > W || p.y + p.r < 0 || p.y - p.r > H) {
+                    projectiles.splice(i, 1);
+                    score++;
+                    scoreDisplay.textContent = `Points: ${score}`;
+                    continue;
+                }
+
+                // Check collision with player → game over
+                if (dist(p.x, p.y, player.x, player.y) < p.r + player.r) {
+                    gameOver();
+                    return;
+                }
+            }
+
+            // Check collision player ↔ enemy
+            if (dist(player.x, player.y, enemy.x, enemy.y) < player.r + enemy.r) {
+                gameOver();
+                return;
+            }
+        }
+
+        // --- Draw ---
+        function draw() {
+            // Background
+            if (bgPattern) {
+                ctx.fillStyle = bgPattern;
+                ctx.fillRect(0, 0, W, H);
+            } else {
+                ctx.fillStyle = '#2d2d44';
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            // Slight overlay for readability
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+            ctx.fillRect(0, 0, W, H);
+
+            // Enemy
+            drawBall(enemy.x, enemy.y, enemy.r, enemy.color, enemy.glowColor);
+
+            // Projectiles
+            for (const p of projectiles) {
+                ctx.save();
+                ctx.shadowColor = 'rgba(0,0,0,0.7)';
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.fillStyle = '#222';
+                ctx.fill();
+                ctx.restore();
+
+                // small glint
+                const g = ctx.createRadialGradient(p.x - p.r * 0.25, p.y - p.r * 0.25, p.r * 0.05, p.x, p.y, p.r);
+                g.addColorStop(0, 'rgba(255,255,255,0.3)');
+                g.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.fillStyle = g;
+                ctx.fill();
+            }
+
+            // Player
+            drawBall(player.x, player.y, player.r, player.color, player.glowColor);
+        }
+
+        // --- Start Screen ---
+        function drawStartScreen() {
+            // Background
+            if (bgPattern) {
+                ctx.fillStyle = bgPattern;
+                ctx.fillRect(0, 0, W, H);
+            } else {
+                ctx.fillStyle = '#2d2d44';
+                ctx.fillRect(0, 0, W, H);
+            }
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            ctx.fillStyle = '#4fc3f7';
+            ctx.font = 'bold 48px Courier New, monospace';
+            ctx.fillText('TIMES OF FORTUNE', W / 2, H / 2 - 60);
+
+            ctx.fillStyle = '#ccc';
+            ctx.font = '18px Courier New, monospace';
+            ctx.fillText('Dodge the enemy projectiles!', W / 2, H / 2 + 10);
+
+            ctx.fillStyle = '#e94560';
+            ctx.font = 'bold 22px Courier New, monospace';
+            ctx.fillText('[ PRESS ENTER TO START ]', W / 2, H / 2 + 70);
+        }
+
+        function startHandler(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                window.removeEventListener('keydown', startHandler);
+                gameState = 'playing';
+                scoreDisplay.style.display = 'block';
+                loop();
+            }
+        }
+
+        // --- Game Over ---
+        function gameOver() {
+            gameState = 'gameover';
+
+            // Darken
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.fillRect(0, 0, W, H);
+
+            // Text
+            ctx.fillStyle = '#e94560';
+            ctx.font = 'bold 52px Segoe UI, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = 'rgba(233, 69, 96, 0.6)';
+            ctx.shadowBlur = 20;
+            ctx.fillText('GAME OVER', W / 2, H / 2 - 30);
+
+            ctx.fillStyle = '#fff';
+            ctx.font = '26px Segoe UI, sans-serif';
+            ctx.shadowColor = 'transparent';
+            ctx.fillText(`Your score: ${score}`, W / 2, H / 2 + 25);
+
+            ctx.fillStyle = '#aaa';
+            ctx.font = '18px Segoe UI, sans-serif';
+            ctx.fillText('Press ENTER to return to menu', W / 2, H / 2 + 65);
+
+            window.addEventListener('keydown', restartHandler);
+        }
+
+        function restartHandler(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                window.removeEventListener('keydown', restartHandler);
+                goToStartScreen();
+            }
+        }
+
+        function goToStartScreen() {
+            score = 0;
+            scoreDisplay.textContent = 'Points: 0';
+            scoreDisplay.style.display = 'none';
+            player.x = W / 2;
+            player.y = H / 2;
+            enemy.x = 100;
+            enemy.y = 100;
+            enemy.vx = 1;
+            enemy.vy = 0.7;
+            enemy.shootTimer = 0;
+            projectiles = [];
+            gameState = 'start';
+            drawStartScreen();
+            window.addEventListener('keydown', startHandler);
+        }
+
+        // --- Loop ---
+        function loop() {
+            if (gameState !== 'playing') return;
+            update();
+            if (gameState !== 'playing') return;
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // Show start screen
+        scoreDisplay.style.display = 'none';
+        drawStartScreen();
+        window.addEventListener('keydown', startHandler);
+    </script>
+</body>
+
+</html>
